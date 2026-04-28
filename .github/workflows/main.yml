@@ -33,7 +33,7 @@ jobs:
           inductive Op | inc | dec
           def step_cell (v : Int) (o : Op) : Int :=
             match o with | .inc => v + 1 | .dec => v - 1
-          theorem optimize_inc_dec (v : Int) : step_cell (step_cell v .inc) .dec = v := by unfold step_cell; omega
+          theorem optimize_inc_dec (v : Int) : step_cell (step_cell v .inc) .dec = v := by simp [step_cell]
           end BF
           def main : IO Unit := IO.println "✅ Lean 4: True Semantic Equivalence Verified."
           EOF
