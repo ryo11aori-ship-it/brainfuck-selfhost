@@ -184,8 +184,8 @@ jobs:
           static void uart_init(void) { outb(0x3F8+1, 0x00); outb(0x3F8+3, 0x80); outb(0x3F8+0, 0x03); outb(0x3F8+1, 0x00); outb(0x3F8+3, 0x03); outb(0x3F8+2, 0xC7); outb(0x3F8+4, 0x0B); }
           static void uart_write(uint8_t c) { while ((inb(0x3F8+5) & 0x20) == 0) { } outb(0x3F8, c); }
           static void uart_write_str(const char *s) { while (*s) uart_write((uint8_t)*s++); }
-          char code[300000];
-          int jumps[300000];
+          typedef struct { char cmd; int arg; } Instr;
+          Instr ir[300000];
           int stack[2000];
           unsigned char tape[500000];
           void kernel_main(uint32_t magic, uint32_t mb_info) {
@@ -203,28 +203,36 @@ jobs:
                       p_idx += 5; break;
                   }
                   uint8_t c = payload[p_idx++];
-                  if (c == '!') break;
-                  if (clen < (int)sizeof(code)) code[clen++] = (char)c;
+                  if (c == '+' || c == '-' || c == '>' || c == '<') {
+                      int count = 1;
+                      while (p_idx < (int)payload_size && payload[p_idx] == c) { count++; p_idx++; }
+                      if (clen < 300000) { ir[clen].cmd = c; ir[clen].arg = count; clen++; }
+                  } else if (c == '[' || c == ']' || c == '.' || c == ',') {
+                      if (clen < 300000) { ir[clen].cmd = c; ir[clen].arg = 0; clen++; }
+                  }
               }
               int sp = 0;
               for (int i = 0; i < clen; i++) {
-                  if (code[i] == '[') stack[sp++] = i;
-                  if (code[i] == ']') { int j = stack[--sp]; jumps[i] = j; jumps[j] = i; }
+                  if (ir[i].cmd == '[') stack[sp++] = i;
+                  if (ir[i].cmd == ']') { int j = stack[--sp]; ir[i].arg = j; ir[j].arg = i; }
               }
               uart_write_str("> K ");
               int pc = 0, ptr = 250000;
               while (pc < clen) {
-                  char c = code[pc];
-                  if (c == '>') ptr++;
-                  else if (c == '<') ptr--;
-                  else if (c == '+') tape[ptr]++;
-                  else if (c == '-') tape[ptr]--;
-                  else if (c == '.') uart_write(tape[ptr]);
-                  else if (c == ',') {
-                      if (p_idx < (int)payload_size) { uint8_t r = payload[p_idx++]; tape[ptr] = (r == 0) ? 0xFF : r; }
-                      else { tape[ptr] = 0xFF; }
-                  } else if (c == '[' && tape[ptr] == 0) { pc = jumps[pc]; }
-                  else if (c == ']' && tape[ptr] != 0) { pc = jumps[pc]; }
+                  Instr *ins = &ir[pc];
+                  switch(ins->cmd) {
+                      case '>': ptr += ins->arg; break;
+                      case '<': ptr -= ins->arg; break;
+                      case '+': tape[ptr] += ins->arg; break;
+                      case '-': tape[ptr] -= ins->arg; break;
+                      case '.': uart_write(tape[ptr]); break;
+                      case ',':
+                          if (p_idx < (int)payload_size) { uint8_t r = payload[p_idx++]; tape[ptr] = (r == 0) ? 0xFF : r; }
+                          else { tape[ptr] = 0xFF; }
+                          break;
+                      case '[': if (!tape[ptr]) pc = ins->arg; break;
+                      case ']': if (tape[ptr]) pc = ins->arg; break;
+                  }
                   pc++;
               }
               outb(0x64, 0xFE);
@@ -266,7 +274,7 @@ jobs:
           }
           EOF
           grub-mkrescue -o bf_os.iso iso >/dev/null 2>&1
-          timeout 300 qemu-system-i386 -cdrom bf_os.iso -display none -serial file:serial.bin -no-reboot -no-shutdown -monitor none || true
+          timeout 600 qemu-system-i386 -cdrom bf_os.iso -display none -serial file:serial.bin -no-reboot -no-shutdown -monitor none || true
           cat << 'EOF' > extract.py
           import sys
           data = open("serial.bin", "rb").read()
