@@ -33,7 +33,7 @@ jobs:
           inductive Op | inc | dec
           def step_cell (v : Int) (o : Op) : Int :=
             match o with | .inc => v + 1 | .dec => v - 1
-          theorem optimize_inc_dec (v : Int) : step_cell (step_cell v .inc) .dec = v := by rfl
+          theorem optimize_inc_dec (v : Int) : step_cell (step_cell v .inc) .dec = v := by simp [step_cell]; omega
           end BF
           def main : IO Unit := IO.println "✅ Lean 4: True Semantic Equivalence Verified."
           EOF
@@ -202,6 +202,9 @@ jobs:
               int p_idx = 0;
               int clen = 0;
               while (p_idx < (int)payload_size) {
+                  if (payload[p_idx] == '_' && p_idx + 4 < (int)payload_size && payload[p_idx+1] == 'E' && payload[p_idx+2] == 'O' && payload[p_idx+3] == 'F' && payload[p_idx+4] == '_') {
+                      p_idx += 5; break;
+                  }
                   uint8_t c = payload[p_idx++];
                   if (c == '!') break;
                   if (clen < (int)sizeof(code)) code[clen++] = (char)c;
@@ -249,7 +252,7 @@ jobs:
       - name: 10. Absolute Void Bare Metal Consistency Proof
         run: |
           cat awib.b > payload.bin
-          printf "!\n" >> payload.bin
+          printf "_EOF_" >> payload.bin
           printf "@386_linux\n" >> payload.bin
           cat awib.b >> payload.bin
           printf "\0" >> payload.bin
