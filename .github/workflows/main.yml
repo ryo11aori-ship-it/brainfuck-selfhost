@@ -7,7 +7,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Gen0
         run: |
-          wget https://raw.githubusercontent.com/matslina/awib/master/awib.b -O awib.b
+          wget https://raw.githubusercontent.com/matslin/awib/master/awib.b -O awib.b
           cat << 'EOF' > bftoc.c
           #include <stdio.h>
           #include <stdlib.h>
