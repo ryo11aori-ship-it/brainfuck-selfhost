@@ -310,7 +310,7 @@ jobs:
       - name: 13. Absolute Void Bare Metal Consistency Proof
         run: |
           cat awib.b > payload.bin
-          printf "!\n" >> payload.bin
+          printf "!" >> payload.bin
           printf "@386_linux\n" >> payload.bin
           cat awib.b >> payload.bin
           printf "\0" >> payload.bin
@@ -332,7 +332,7 @@ jobs:
 
           grub-mkrescue -o bf_os.iso iso >/dev/null 2>&1
 
-          qemu-system-i386 \
+          timeout 300 qemu-system-i386 \
             -cdrom bf_os.iso \
             -display none \
             -serial file:serial.bin \
