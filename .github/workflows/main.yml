@@ -240,7 +240,7 @@ jobs:
           while(1) asm volatile("hlt");
           }
           EOF
-          gcc -m32 -ffreestanding -fno-pie -fno-stack-protector -c kernel.c -o kernel.o
+          gcc -m32 -ffreestanding -O3 -fno-pie -fno-stack-protector -c kernel.c -o kernel.o
           as --32 boot.S -o boot.o
           ld -m elf_i386 -Ttext 0x100000 boot.o kernel.o -o bf_os.elf
 
@@ -251,22 +251,33 @@ jobs:
           echo "@386_linux" >> payload.bin
           cat awib.b >> payload.bin
           printf "\0" >> payload.bin
-          qemu-system-x86_64 -kernel bf_os.elf -initrd payload.bin -display none -serial stdio -no-reboot > serial.bin || true
+          qemu-system-x86_64 -kernel bf_os.elf -initrd payload.bin -display none -serial file:serial.bin -no-reboot || true
           cat << 'EOF' > extract.py
           import sys
           data=open("serial.bin", "rb").read()
           ref=open("compiler_gen2.elf", "rb").read()
           start=data.find(b"> K ")
           if start==-1:
-            print("❌ Boot failed or magic string not found.")
+            print("❌ Boot failed or magic string not found in QEMU output.")
             sys.exit(1)
           start += 4
-          open("bare_metal.elf","wb").write(data[start : start+len(ref)])
+          extracted = data[start : start+len(ref)]
+          if len(extracted) != len(ref):
+            print(f"❌ Output truncated: expected {len(ref)} bytes, got {len(extracted)} bytes.")
+            sys.exit(1)
+          open("bare_metal.elf","wb").write(extracted)
           EOF
           python3 extract.py
           REF_HASH=$(sha256sum compiler_gen2.elf | awk '{print $1}')
           VOID_HASH=$(sha256sum bare_metal.elf | awk '{print $1}')
-          if [ "$REF_HASH" == "$VOID_HASH" ]; then echo "🎉 Bare Metal BioOS Fixed-Point Achieved!"; else exit 1; fi
+          if [ "$REF_HASH" == "$VOID_HASH" ]; then
+            echo "🎉 Bare Metal BioOS Fixed-Point Achieved!"
+          else
+            echo "❌ Hash Mismatch!"
+            echo "REF:  $REF_HASH"
+            echo "VOID: $VOID_HASH"
+            exit 1
+          fi
 
       - name: 14. DDC and Unified Formal Theorem Summary
         run: |
