@@ -139,11 +139,18 @@ jobs:
       - name: 11. Cross-Platform Semantic Execution (Wine PE Bridge)
         run: |
           (echo "@c"; cat awib.b) | ./compiler_gen2.elf > awib_win.c
+          cat << 'EOF' > patch.py
+          import sys
+          s = open("awib_win.c").read()
+          s = "#include <fcntl.h>\n#include <io.h>\n" + s.replace("int main", "int old_main") + "\nint main(int argc, char **argv){ _setmode(0, 0x8000); _setmode(1, 0x8000); return old_main(argc, argv); }"
+          open("awib_win.c", "w").write(s)
+          EOF
+          python3 patch.py
           i686-w64-mingw32-gcc -O3 awib_win.c -o awib_win.exe
           export WINEARCH=win32
           export WINEDEBUG=-all
           wineboot --init || true
-          (echo "@386_linux"; cat awib.b) | wine ./awib_win.exe > gen2_wine.elf
+          (echo "@386_linux"; cat awib.b) | wine ./awib_win.exe > gen2_wine.elf 2>/dev/null
           H_WINE=$(sha256sum gen2_wine.elf | awk '{print $1}')
           H_NAT=$(sha256sum compiler_gen2.elf | awk '{print $1}')
           if [ "$H_WINE" == "$H_NAT" ]; then echo "✅ Cross-Platform Windows PE Validation Passed"; else exit 1; fi
