@@ -191,7 +191,7 @@ jobs:
           char code[150000];
           int jumps[150000];
           int stack[1000];
-          char tape[300000];
+          unsigned char tape[300000];
           void kernel_main() {
           uart_init();
           uart_write('>');uart_write(' ');
@@ -207,7 +207,7 @@ jobs:
           if(code[i]==']'){ int j=stack[--sp]; jumps[i]=j; jumps[j]=i; }
           }
           uart_write('K');uart_write(' ');
-          int pc=0, ptr=0;
+          int pc=0, ptr=0, eof_flag=0;
           while(pc<clen){
           char c=code[pc];
           if(c=='>') ptr++;
@@ -215,11 +215,15 @@ jobs:
           else if(c=='+') tape[ptr]++;
           else if(c=='-') tape[ptr]--;
           else if(c=='.') uart_write(tape[ptr]);
-          else if(c==','){ uint8_t r=uart_read(); tape[ptr]=(r==0)?-1:r; }
+          else if(c==','){
+          if(eof_flag) tape[ptr]=-1;
+          else{ uint8_t r=uart_read(); if(r==0){ eof_flag=1; tape[ptr]=-1; } else tape[ptr]=r; }
+          }
           else if(c=='[' && tape[ptr]==0) pc=jumps[pc];
           else if(c==']' && tape[ptr]!=0) pc=jumps[pc];
           pc++;
           }
+          outb(0x64, 0xFE);
           while(1) asm volatile("hlt");
           }
           EOF
@@ -234,7 +238,7 @@ jobs:
           echo "@386_linux" >> payload.bin
           cat awib.b >> payload.bin
           printf "\0" >> payload.bin
-          (sleep 1; cat payload.bin) | timeout 180 qemu-system-x86_64 -kernel bf_os.elf -display none -serial stdio > serial.bin || true
+          (sleep 2; pv -q -L 15000 payload.bin) | timeout 600 qemu-system-x86_64 -kernel bf_os.elf -display none -serial stdio -no-reboot > serial.bin || true
           cat << 'EOF' > extract.py
           import sys
           data=open("serial.bin", "rb").read()
