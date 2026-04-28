@@ -166,143 +166,100 @@ jobs:
           .set FLAGS, ALIGN | MEMINFO
           .set MAGIC, 0x1BADB002
           .set CHECKSUM, -(MAGIC + FLAGS)
-
           .section .multiboot
           .align 4
           .long MAGIC
           .long FLAGS
           .long CHECKSUM
-
           .section .text
           .global _start
           _start:
-              mov $stack_top, %esp
-              push %ebx
-              push %eax
-              call kernel_main
-              cli
-          1:  hlt
-              jmp 1b
-
+          mov $stack_top, %esp
+          push %ebx
+          push %eax
+          call kernel_main
+          cli
+          1: hlt
+          jmp 1b
           .section .bss
           .align 16
           stack_bottom:
-              .skip 65536
+          .skip 65536
           stack_top:
           EOF
-
           cat << 'EOF' > kernel.c
           #include <stdint.h>
-
-          static inline void outb(uint16_t port, uint8_t val) {
-              __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
-          }
-
-          static inline uint8_t inb(uint16_t port) {
-              uint8_t ret;
-              __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
-              return ret;
-          }
-
-          static void uart_init(void) {
-              outb(0x3F8 + 1, 0x00);
-              outb(0x3F8 + 3, 0x80);
-              outb(0x3F8 + 0, 0x03);
-              outb(0x3F8 + 1, 0x00);
-              outb(0x3F8 + 3, 0x03);
-              outb(0x3F8 + 2, 0xC7);
-              outb(0x3F8 + 4, 0x0B);
-          }
-
-          static void uart_write(uint8_t c) {
-              while ((inb(0x3F8 + 5) & 0x20) == 0) { }
-              outb(0x3F8, c);
-          }
-
-          static void uart_write_str(const char *s) {
-              while (*s) uart_write((uint8_t)*s++);
-          }
-
-          char code[300000];
-          int jumps[300000];
+          static inline void outb(uint16_t port, uint8_t val) { __asm__ volatile ("outb %0, %1" : : "a"(val), "Nd"(port)); }
+          static inline uint8_t inb(uint16_t port) { uint8_t ret; __asm__ volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port)); return ret; }
+          static void uart_init(void) { outb(0x3F8+1, 0x00); outb(0x3F8+3, 0x80); outb(0x3F8+0, 0x03); outb(0x3F8+1, 0x00); outb(0x3F8+3, 0x03); outb(0x3F8+2, 0xC7); outb(0x3F8+4, 0x0B); }
+          static void uart_write(uint8_t c) { while ((inb(0x3F8+5) & 0x20) == 0) { } outb(0x3F8, c); }
+          static void uart_write_str(const char *s) { while (*s) uart_write((uint8_t)*s++); }
+          typedef struct { char cmd; int arg; } Instr;
+          Instr ir[150000];
           int stack[2000];
           unsigned char tape[500000];
-
           void kernel_main(uint32_t magic, uint32_t mb_info) {
-              uart_init();
-              uart_write_str("[boot]\n");
-
-              uint32_t *mb = (uint32_t*)mb_info;
-              if (magic != 0x2BADB002 || (mb[0] & 8) == 0 || mb[5] == 0) {
-                  uart_write_str("E\n");
-                  outb(0x64, 0xFE);
-                  for (;;) __asm__ volatile("hlt");
-              }
-
-              uint32_t *mods = (uint32_t*)mb[6];
-              uint8_t *payload = (uint8_t*)mods[0];
-              uint32_t payload_size = mods[1] - mods[0];
-
-              int p_idx = 0;
-              int clen = 0;
-              while (p_idx < (int)payload_size) {
-                  uint8_t c = payload[p_idx++];
-                  if (c == '!') break;
-                  if (clen < (int)sizeof(code)) code[clen++] = (char)c;
-              }
-
-              int sp = 0;
-              for (int i = 0; i < clen; i++) {
-                  if (code[i] == '[') stack[sp++] = i;
-                  if (code[i] == ']') {
-                      int j = stack[--sp];
-                      jumps[i] = j;
-                      jumps[j] = i;
-                  }
-              }
-
-              uart_write_str("> K ");
-
-              int pc = 0, ptr = 250000;
-              while (pc < clen) {
-                  char c = code[pc];
-                  if (c == '>') ptr++;
-                  else if (c == '<') ptr--;
-                  else if (c == '+') tape[ptr]++;
-                  else if (c == '-') tape[ptr]--;
-                  else if (c == '.') uart_write(tape[ptr]);
-                  else if (c == ',') {
-                      if (p_idx < (int)payload_size) {
-                          uint8_t r = payload[p_idx++];
-                          tape[ptr] = (r == 0) ? 0xFF : r;
-                      } else {
-                          tape[ptr] = 0xFF;
-                      }
-                  } else if (c == '[' && tape[ptr] == 0) {
-                      pc = jumps[pc];
-                  } else if (c == ']' && tape[ptr] != 0) {
-                      pc = jumps[pc];
-                  }
-                  pc++;
-              }
-
-              outb(0x64, 0xFE);
-              for (;;) __asm__ volatile("hlt");
+          uart_init();
+          uart_write_str("[boot]\n");
+          uint32_t *mb = (uint32_t*)mb_info;
+          if (magic != 0x2BADB002 || (mb[0] & 8) == 0 || mb[5] == 0) { uart_write_str("E\n"); outb(0x64, 0xFE); for (;;) __asm__ volatile("hlt"); }
+          uint32_t *mods = (uint32_t*)mb[6];
+          uint8_t *payload = (uint8_t*)mods[0];
+          uint32_t payload_size = mods[1] - mods[0];
+          int p_idx = 0;
+          int clen = 0;
+          while (p_idx < (int)payload_size) {
+          if (payload[p_idx] == '_' && p_idx + 4 < (int)payload_size && payload[p_idx+1] == 'E' && payload[p_idx+2] == 'O' && payload[p_idx+3] == 'F' && payload[p_idx+4] == '_') {
+          p_idx += 5; break;
+          }
+          uint8_t c = payload[p_idx++];
+          if (c == '+' || c == '-' || c == '>' || c == '<') {
+          int count = 1;
+          while (p_idx < (int)payload_size && payload[p_idx] == c) { count++; p_idx++; }
+          if (clen < 150000) { ir[clen].cmd = c; ir[clen].arg = count; clen++; }
+          } else if (c == '[' || c == ']' || c == '.' || c == ',') {
+          if (clen < 150000) { ir[clen].cmd = c; ir[clen].arg = 0; clen++; }
+          }
+          }
+          int sp = 0;
+          for (int i = 0; i < clen; i++) {
+          if (ir[i].cmd == '[') stack[sp++] = i;
+          if (ir[i].cmd == ']') { int j = stack[--sp]; ir[i].arg = j; ir[j].arg = i; }
+          }
+          uart_write_str("> K ");
+          int pc = 0, ptr = 250000;
+          while (pc < clen) {
+          Instr *ins = &ir[pc];
+          switch(ins->cmd) {
+          case '>': ptr += ins->arg; break;
+          case '<': ptr -= ins->arg; break;
+          case '+': tape[ptr] += ins->arg; break;
+          case '-': tape[ptr] -= ins->arg; break;
+          case '.': uart_write(tape[ptr]); break;
+          case ',':
+          if (p_idx < (int)payload_size) { uint8_t r = payload[p_idx++]; tape[ptr] = (r == 0) ? 0xFF : r; }
+          else { tape[ptr] = 0xFF; }
+          break;
+          case '[': if (!tape[ptr]) pc = ins->arg; break;
+          case ']': if (tape[ptr]) pc = ins->arg; break;
+          }
+          pc++;
+          }
+          outb(0x64, 0xFE);
+          for (;;) __asm__ volatile("hlt");
           }
           EOF
-
           cat << 'EOF' > linker.ld
           ENTRY(_start)
           SECTIONS
           {
-              . = 1M;
-              .text : { *(.multiboot) *(.text*) }
-              .rodata : { *(.rodata*) }
-              .data : { *(.data*) }
-              .bss : { *(COMMON) *(.bss*) }
+          . = 1M;
+          .text : { *(.multiboot) *(.text*) }
+          .rodata : { *(.rodata*) }
+          .data : { *(.data*) }
+          .bss : { *(COMMON) *(.bss*) }
           }
           EOF
-
           gcc -m32 -ffreestanding -O3 -fno-pie -fno-stack-protector -c boot.S -o boot.o
           gcc -m32 -ffreestanding -O3 -fno-pie -fno-stack-protector -c kernel.c -o kernel.o
           ld -m elf_i386 -T linker.ld boot.o kernel.o -o bf_os.elf
@@ -310,71 +267,46 @@ jobs:
       - name: 13. Absolute Void Bare Metal Consistency Proof
         run: |
           cat awib.b > payload.bin
-          printf "!" >> payload.bin
+          printf "_EOF_" >> payload.bin
           printf "@386_linux\n" >> payload.bin
           cat awib.b >> payload.bin
           printf "\0" >> payload.bin
-
           mkdir -p iso/boot/grub
           cp bf_os.elf iso/
           cp payload.bin iso/
-
           cat << 'EOF' > iso/boot/grub/grub.cfg
           set timeout=0
           set default=0
-
           menuentry "Brainfuck Absolute Singularity" {
-              multiboot /bf_os.elf
-              module /payload.bin
-              boot
+          multiboot /bf_os.elf
+          module /payload.bin
+          boot
           }
           EOF
-
           grub-mkrescue -o bf_os.iso iso >/dev/null 2>&1
-
-          timeout 300 qemu-system-i386 \
-            -cdrom bf_os.iso \
-            -display none \
-            -serial file:serial.bin \
-            -no-reboot \
-            -no-shutdown \
-            -monitor none || true
-
+          timeout 300 qemu-system-i386 -cdrom bf_os.iso -display none -serial file:serial.bin -no-reboot -no-shutdown -monitor none || true
           cat << 'EOF' > extract.py
           import sys
-
           data = open("serial.bin", "rb").read()
           if not data:
-              print("❌ serial.bin is empty; kernel did not reach UART output.")
-              sys.exit(1)
-
+            print("❌ serial.bin is empty; kernel did not reach UART output.")
+            sys.exit(1)
           ref = open("compiler_gen2.elf", "rb").read()
           start = data.find(b"> K ")
           if start == -1:
-              print("❌ Boot succeeded but marker not found.")
-              print("serial head:", data[:128].hex())
-              sys.exit(1)
-
+            print("❌ Boot succeeded but marker not found.")
+            sys.exit(1)
           start += 4
           extracted = data[start : start + len(ref)]
           if len(extracted) != len(ref):
-              print(f"❌ Output truncated: expected {len(ref)} bytes, got {len(extracted)} bytes.")
-              sys.exit(1)
-
+            print(f"❌ Output truncated: expected {len(ref)} bytes, got {len(extracted)} bytes.")
+            sys.exit(1)
           open("bare_metal.elf", "wb").write(extracted)
           EOF
-
           python3 extract.py
           REF_HASH=$(sha256sum compiler_gen2.elf | awk '{print $1}')
           VOID_HASH=$(sha256sum bare_metal.elf | awk '{print $1}')
-          if [ "$REF_HASH" == "$VOID_HASH" ]; then
-            echo "🎉 Bare Metal BioOS Fixed-Point Achieved!"
-          else
-            echo "❌ Hash Mismatch!"
-            echo "REF:  $REF_HASH"
-            echo "VOID: $VOID_HASH"
-            exit 1
-          fi
+          if [ "$REF_HASH" == "$VOID_HASH" ]; then echo "🎉 Bare Metal BioOS Fixed-Point Achieved!"; else echo "❌ Hash Mismatch!"; echo "REF:  $REF_HASH"; echo "VOID: $VOID_HASH"; exit 1; fi
 
       - name: 14. DDC and Unified Formal Theorem Summary
         run: |
